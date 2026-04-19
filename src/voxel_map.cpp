@@ -11,6 +11,8 @@ which is included as part of this source code package.
 */
 
 #include "voxel_map.h"
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 void calcBodyCov(Eigen::Vector3d &pb, const float range_inc, const float degree_inc, Eigen::Matrix3d &cov)
 {
@@ -33,23 +35,32 @@ void calcBodyCov(Eigen::Vector3d &pb, const float range_inc, const float degree_
   cov = direction * range_var * direction.transpose() + A * direction_var * A.transpose();
 }
 
-void loadVoxelConfig(ros::NodeHandle &nh, VoxelMapConfig &voxel_config)
+void loadVoxelConfig(rclcpp::Node::SharedPtr node, VoxelMapConfig &voxel_config)
 {
-  nh.param<bool>("publish/pub_plane_en", voxel_config.is_pub_plane_map_, false);
-  
-  nh.param<int>("lio/max_layer", voxel_config.max_layer_, 1);
-  nh.param<double>("lio/voxel_size", voxel_config.max_voxel_size_, 0.5);
-  nh.param<double>("lio/min_eigen_value", voxel_config.planner_threshold_, 0.01);
-  nh.param<double>("lio/sigma_num", voxel_config.sigma_num_, 3);
-  nh.param<double>("lio/beam_err", voxel_config.beam_err_, 0.02);
-  nh.param<double>("lio/dept_err", voxel_config.dept_err_, 0.05);
-  nh.param<vector<int>>("lio/layer_init_num", voxel_config.layer_init_num_, vector<int>{5,5,5,5,5});
-  nh.param<int>("lio/max_points_num", voxel_config.max_points_num_, 50);
-  nh.param<int>("lio/max_iterations", voxel_config.max_iterations_, 5);
+  auto declare = [&](const std::string &name, auto default_val) {
+    using T = decltype(default_val);
+    if (!node->has_parameter(name)) node->declare_parameter<T>(name, default_val);
+    return node->get_parameter(name).get_value<T>();
+  };
 
-  nh.param<bool>("local_map/map_sliding_en", voxel_config.map_sliding_en, false);
-  nh.param<int>("local_map/half_map_size", voxel_config.half_map_size, 100);
-  nh.param<double>("local_map/sliding_thresh", voxel_config.sliding_thresh, 8);
+  voxel_config.is_pub_plane_map_ = declare("publish.pub_plane_en", false);
+  voxel_config.max_layer_ = declare("lio.max_layer", 1);
+  voxel_config.max_voxel_size_ = declare("lio.voxel_size", 0.5);
+  voxel_config.planner_threshold_ = declare("lio.min_eigen_value", 0.01);
+  voxel_config.sigma_num_ = declare("lio.sigma_num", 3.0);
+  voxel_config.beam_err_ = declare("lio.beam_err", 0.02);
+  voxel_config.dept_err_ = declare("lio.dept_err", 0.05);
+
+  if (!node->has_parameter("lio.layer_init_num"))
+    node->declare_parameter("lio.layer_init_num", std::vector<int64_t>{5,5,5,5,5});
+  auto layer_init_long = node->get_parameter("lio.layer_init_num").as_integer_array();
+  voxel_config.layer_init_num_.assign(layer_init_long.begin(), layer_init_long.end());
+
+  voxel_config.max_points_num_ = declare("lio.max_points_num", 50);
+  voxel_config.max_iterations_ = declare("lio.max_iterations", 5);
+  voxel_config.map_sliding_en = declare("local_map.map_sliding_en", false);
+  voxel_config.half_map_size = declare("local_map.half_map_size", 100);
+  voxel_config.sliding_thresh = declare("local_map.sliding_thresh", 8.0);
 }
 
 void VoxelOctoTree::init_plane(const std::vector<pointWithVar> &points, VoxelPlane *plane)
@@ -490,7 +501,9 @@ void VoxelMapManager::StateEstimation(StatesGroup &state_propagat)
           (I_STATE.block<DIM_STATE, DIM_STATE>(0, 0) - G.block<DIM_STATE, DIM_STATE>(0, 0)) * state_.cov.block<DIM_STATE, DIM_STATE>(0, 0);
       // total_distance += (_state.pos_end - position_last).norm();
       position_last_ = state_.pos_end;
-      geoQuat_ = tf::createQuaternionMsgFromRollPitchYaw(euler_cur(0), euler_cur(1), euler_cur(2));
+      tf2::Quaternion q_tf2;
+      q_tf2.setRPY(euler_cur(0), euler_cur(1), euler_cur(2));
+      geoQuat_ = tf2::toMsg(q_tf2);
 
       // VD(DIM_STATE) K_sum  = K.rowwise().sum();
       // VD(DIM_STATE) P_diag = _state.cov.diagonal();

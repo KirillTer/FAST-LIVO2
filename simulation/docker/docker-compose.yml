@@ -1,0 +1,77 @@
+# FAST-LIVO2 + PX4 Gazebo Rover Simulation
+#
+# Usage:
+#   cd FAST-LIVO2
+#   docker compose -f simulation/docker/docker-compose.yml up          # with Gazebo GUI
+#   docker compose -f simulation/docker/docker-compose.yml up -d       # headless (detached)
+#
+# Drive the rover (separate terminal):
+#   docker exec -it fast-livo2-sim bash
+#   rostopic pub /rover/cmd_vel geometry_msgs/Twist "linear: {x: 0.5}" -r 10
+#
+# Or with teleop keyboard:
+#   docker compose -f simulation/docker/docker-compose.yml run --rm teleop
+
+services:
+  sim:
+    build:
+      context: ../../
+      dockerfile: simulation/docker/Dockerfile
+    image: fast-livo2-sim
+    container_name: fast-livo2-sim
+    command: sim
+    privileged: true
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+      - GAZEBO_GUI=true
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Persist PX4 build cache between runs
+      - px4_build:/root/PX4-Autopilot/build
+    stdin_open: true
+    tty: true
+
+  # Headless variant (no Gazebo GUI — for CI or remote servers)
+  sim-headless:
+    extends: sim
+    container_name: fast-livo2-sim-headless
+    environment:
+      - DISPLAY=
+      - GAZEBO_GUI=false
+    profiles:
+      - headless
+
+  # Browser-based GUI via noVNC — recommended for macOS / remote hosts.
+  # Open http://localhost:6080/vnc.html?autoconnect=1&resize=scale after boot.
+  sim-vnc:
+    extends: sim
+    container_name: fast-livo2-sim-vnc
+    network_mode: bridge
+    ports:
+      - "6080:6080"   # noVNC web client
+      - "5900:5900"   # raw VNC (optional; connect with any VNC viewer)
+    environment:
+      - DISPLAY=
+      - GAZEBO_GUI=vnc
+      - WORLD=${WORLD:-livo2_test}
+    volumes: []       # no host X11 socket needed
+    profiles:
+      - vnc
+
+  # Teleop keyboard controller (run separately after sim is up)
+  teleop:
+    image: fast-livo2-sim
+    container_name: fast-livo2-teleop
+    command: teleop
+    network_mode: host
+    environment:
+      - ROS_MASTER_URI=http://localhost:11311
+    stdin_open: true
+    tty: true
+    profiles:
+      - tools
+
+volumes:
+  px4_build:

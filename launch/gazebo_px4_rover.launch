@@ -1,0 +1,57 @@
+<launch>
+<!-- ============================================================
+     FAST-LIVO2 + PX4 SITL + Gazebo Rover
+     
+     Prerequisites:
+       - PX4-Autopilot source built with: make px4_sitl_default
+       - MAVROS:  sudo apt install ros-$ROS_DISTRO-mavros ros-$ROS_DISTRO-mavros-extras
+       - Gazebo:  already installed with ROS
+       
+     Usage:
+       roslaunch fast_livo gazebo_px4_rover.launch
+       
+     To drive the rover:
+       rostopic pub /rover/cmd_vel geometry_msgs/Twist "linear: {x: 0.5}" -r 10
+     Or use teleop:
+       rosrun teleop_twist_keyboard teleop_twist_keyboard.py cmd_vel:=/rover/cmd_vel
+     ============================================================ -->
+
+  <arg name="rviz" default="true" />
+  <arg name="gui" default="true" />
+  <arg name="world" default="$(find fast_livo)/simulation/worlds/livo2_test.world" />
+
+  <!-- ==================== GAZEBO ==================== -->
+  <env name="GAZEBO_MODEL_PATH" 
+       value="$(find fast_livo)/simulation/models:$(optenv GAZEBO_MODEL_PATH)" />
+
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(arg world)" />
+    <arg name="gui" value="$(arg gui)" />
+    <arg name="paused" value="false" />
+    <arg name="use_sim_time" value="true" />
+    <arg name="verbose" value="false" />
+  </include>
+
+  <!-- ==================== MAVROS ==================== -->
+  <!-- PX4 SITL connects on UDP 14540 by default -->
+  <include file="$(find mavros)/launch/px4.launch">
+    <arg name="fcu_url" value="udp://:14540@localhost:14557" />
+    <arg name="gcs_url" value="" />
+  </include>
+
+  <!-- ==================== FAST-LIVO2 ==================== -->
+  <param name="/use_sim_time" value="true" />
+
+  <rosparam command="load" file="$(find fast_livo)/config/gazebo_px4_rover.yaml" />
+
+  <node pkg="fast_livo" type="fastlivo_mapping" name="laserMapping" output="screen">
+    <rosparam file="$(find fast_livo)/config/camera_gazebo.yaml" />
+  </node>
+
+  <!-- ==================== RVIZ ==================== -->
+  <group if="$(arg rviz)">
+    <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" 
+          args="-d $(find fast_livo)/rviz_cfg/fast_livo2.rviz" />
+  </group>
+
+</launch>

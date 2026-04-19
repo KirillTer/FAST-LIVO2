@@ -1,0 +1,30 @@
+<launch>
+<!-- Launch file for FAST-LIVO2 with PX4 via MAVROS -->
+
+	<arg name="rviz" default="true" />
+	<arg name="fcu_url" default="/dev/ttyACM0:921600" />
+	<arg name="gcs_url" default="" />
+
+	<!-- MAVROS: PX4 <-> ROS bridge -->
+	<include file="$(find mavros)/launch/px4.launch">
+		<arg name="fcu_url" value="$(arg fcu_url)" />
+		<arg name="gcs_url" value="$(arg gcs_url)" />
+	</include>
+
+	<!-- Load FAST-LIVO2 config for PX4 -->
+	<rosparam command="load" file="$(find fast_livo)/config/px4_avia.yaml" />
+
+	<!-- FAST-LIVO2 node -->
+	<node pkg="fast_livo" type="fastlivo_mapping" name="laserMapping" output="screen">
+		<rosparam file="$(find fast_livo)/config/camera_pinhole.yaml" />
+	</node>
+	
+	<!-- RViz visualization -->
+	<group if="$(arg rviz)">
+		<node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find fast_livo)/rviz_cfg/fast_livo2.rviz" />
+	</group>
+	
+	<!-- Image decompression (if camera publishes compressed) -->
+	<node pkg="image_transport" type="republish" name="republish" args="compressed in:=/left_camera/image raw out:=/left_camera/image" output="screen" respawn="true"/>
+
+</launch>
